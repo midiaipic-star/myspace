@@ -65,10 +65,8 @@ https://github.com/midiaipic-star/myspace/blob/main/agencia-ministerio-infantil/
 SHA do blob consultado: `cb43684e1cc4ad1d9043b305387952d1aca44861`.
 O documento oficial não foi modificado nem recriado.
 
-Salvar posteriormente somente estes três arquivos novos:
+Arquivos do protótipo:
 
 - `prototipos/lia/lia.py`
 - `prototipos/lia/test_lia.py`
 - `prototipos/lia/README.md`
-
-Nenhum commit ou push faz parte desta etapa.
