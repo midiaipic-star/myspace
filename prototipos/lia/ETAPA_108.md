@@ -94,3 +94,72 @@ compartilhamentos e não cria credenciais.
 
 ```python
 from leitor_sheets import ler_catalogo, ErroLeituraSheets
+from catalogo import pesquisar
+
+try:
+    registros = ler_catalogo('Página1')
+    encontrados = pesquisar(registros, tema='criação', faixa_etaria='6 anos', tipo='jogo')
+except ErroLeituraSheets:
+    print('Consulta não concluída. Não é possível concluir se há materiais.')
+else:
+    print(f'{len(encontrados)} registro(s) publicado(s) correspondente(s).')
+```
+
+A integração fictícia da Etapa 90 permanece intacta e não chama o leitor.
+O leitor não possui atendimento CLI; sua interface é a função acima.
+
+## Verificação realizada
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s prototipos/lia -v
+```
+
+95 testes aprovados: 53 anteriores preservados e 42 testes do leitor. Testes novos substituem
+a descoberta ADC e a sessão HTTP por dublês locais, sem autenticação ou rede real. Cobrem
+escopo, rejeição de chave, autenticação ausente, GET do ID e intervalo corretos,
+escape da aba, compatibilidade com pesquisar, células/linhas vazias, cabeçalhos,
+respostas inválidas, HTTP 301/400/401/403/404/429/500/503, timeout, conexão,
+fechamento da sessão e preservação dos registros. Nenhum teste real da API foi
+executado; o sucesso do Apps Script não comprova acesso da futura identidade ADC.
+
+## Necessário para consulta real
+
+- Usar a aba confirmada Página1 e os cabeçalhos oficiais na primeira linha A1:L1.
+- Google Sheets API habilitada no projeto apropriado; nenhuma ativação realizada.
+- ADC de identidade vinculada da conta exclusiva da Lia, token somente com
+  spreadsheets.readonly e, quando exigido, projeto de quota
+  e permissões de consumo da API. Faturamento não foi ativado nesta etapa.
+- Compartilhar somente o catálogo como Leitor com a identidade efetiva, mantendo
+  o acesso geral Restrito; respeitar políticas da organização.
+- Instalar as dependências no ambiente de execução.
+- Permitir sheets.googleapis.com e endpoints de autenticação conforme o método:
+  www.googleapis.com para inspeção do token via POST, além de acesso ao metadata server
+  para a identidade vinculada do runtime.
+
+O estado consultado do Codex mostra rede restrita aplicada, sem esses endpoints
+na lista permitida e sem identidade/segredo configurado. Não houve mudança de rede,
+credenciais ou permissões. Não foram feitas leituras ou modificações no Sheets.
+
+Fonte: https://github.com/midiaipic-star/myspace/tree/main/prototipos/lia
+
+## Revisão de segurança
+
+Testes verificam identidade incorreta ou desconhecida no metadata, resolução da
+identidade após refresh, credencial inválida após refresh, falha de renovação,
+rejeição de ADC de usuário e chave privada, escopos amplos/de escrita/ausentes,
+validade ausente/expirada/malformada, resposta de inspeção inválida, revalidação,
+destino indevido e acesso negado pela Sheets API. Tokeninfo sem email é aceito
+quando as demais condições são válidas; qualquer email nesse retorno é ignorado.
+Testes também conferem POST com token no corpo e ausência de token na URL.
+
+Não houve leitura da planilha real nem validação online de identidade ou token.
+Os 53 testes e módulos anteriores da Lia permanecem sem alterações.
+
+## Referências da correção
+
+- Tipos de token e campos opcionais:
+  https://docs.cloud.google.com/docs/authentication/token-types
+- google-auth, credenciais vinculadas e comportamento de scopes do metadata server:
+  https://googleapis.dev/python/google-auth/latest/reference/google.auth.compute_engine.credentials.html
+- Exemplo oficial de POST de access_token para tokeninfo:
+  https://docs.cloud.google.com/sdk/gcloud/reference/auth/application-default/print-access-token

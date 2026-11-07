@@ -94,3 +94,96 @@ class _SessaoLia:
         destino = 'https://sheets.googleapis.com/v4/spreadsheets/' + PLANILHA_ID + '/values/'
         if not url.startswith(destino) or allow_redirects is not False:
             raise ErroAutenticacaoSheets('Destino de leitura não autorizado.')
+        return self._http.get(
+            url, params=params, timeout=timeout, allow_redirects=False,
+            headers={'Authorization': 'Bearer ' + token})
+
+    def close(self):
+        self._http.close()
+
+
+def _criar_sessao(timeout):
+    auth, credencial_vinculada, sessao_http, requisicao = _dependencias()
+    try:
+        credenciais, _ = auth.default(scopes=ESCOPOS)
+        if not isinstance(credenciais, credencial_vinculada):
+            raise ErroAutenticacaoSheets(
+                'ADC não permitida: use a identidade vinculada da conta de serviço da Lia; '
+                'credenciais locais de usuário e chaves privadas são rejeitadas.')
+        http = sessao_http()
+        try:
+            return _SessaoLia(credenciais, http, requisicao(session=http), timeout)
+        except Exception:
+            http.close()
+            raise
+    except ErroAutenticacaoSheets:
+        raise
+    except Exception:
+        # Não expõe conteúdo de credenciais, tokens ou mensagens do provedor.
+        raise ErroAutenticacaoSheets('Não foi possível obter a identidade vinculada da Lia via ADC.') from None
+
+
+def _converter(resposta):
+    if not isinstance(resposta, dict) or resposta.get('majorDimension') != 'ROWS':
+        raise ErroEstruturaSheets('Resposta inválida: esperadas linhas da Sheets API.')
+    linhas = resposta.get('values')
+    if not isinstance(linhas, list) or not linhas:
+        raise ErroEstruturaSheets('Cabeçalho do catálogo ausente.')
+    if linhas[0] != list(COLUNAS):
+        raise ErroEstruturaSheets('Cabeçalho diferente das 12 colunas oficiais na ordem prevista.')
+    materiais = []
+    for linha in linhas[1:]:
+        if not isinstance(linha, list) or len(linha) > len(COLUNAS):
+            raise ErroEstruturaSheets('Linha incompatível com as 12 colunas oficiais.')
+        # FORMATTED_VALUE retorna textos; None também é tratado como célula vazia.
+        if any(v is not None and not isinstance(v, str) for v in linha):
+            raise ErroEstruturaSheets('Esperados valores textuais formatados.')
+        valores = ['' if v is None else v for v in linha]
+        valores += [''] * (len(COLUNAS) - len(valores))
+        if any(v.strip() for v in valores):
+            materiais.append(dict(zip(COLUNAS, valores)))
+    return materiais
+
+
+def ler_catalogo(aba, *, timeout=20):
+    """Lê A1:L da aba explícita do catálogo oficial usando exclusivamente GET.
+
+    Retorna todos os registros, inclusive rascunhos e incompletos, para o
+    catálogo aplicar suas regras. [] exige cabeçalho válido e leitura bem-sucedida
+    sem linhas preenchidas. Qualquer falha levanta ErroLeituraSheets ou subclasse.
+    Não acessa links, não registra pedidos, não entrega e não altera a planilha.
+    """
+    if not isinstance(aba, str) or not aba.strip():
+        raise ValueError('Informe o nome exato da aba do catálogo.')
+    if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout) or timeout <= 0):
+        raise ValueError('timeout deve ser um número positivo finito em segundos.')
+    intervalo = "'" + aba.replace("'", "''") + "'!A1:L"
+    url = ('https://sheets.googleapis.com/v4/spreadsheets/' + PLANILHA_ID
+           + '/values/' + quote(intervalo, safe=''))
+    sessao = _criar_sessao(timeout)
+    try:
+        resposta = sessao.get(
+            url, params={'majorDimension': 'ROWS', 'valueRenderOption': 'FORMATTED_VALUE'},
+            timeout=timeout, allow_redirects=False)
+        if resposta.status_code in (401, 403):
+            raise ErroAutenticacaoSheets(
+                f'Consulta não autorizada (HTTP {resposta.status_code}); '
+                'não foi possível confirmar o acesso de leitura da Lia ao catálogo.')
+        if resposta.status_code != 200:
+            raise ErroLeituraSheets(
+                f'Consulta não concluída (HTTP {resposta.status_code}); '
+                'não é possível concluir se há materiais.')
+        try:
+            dados = resposta.json()
+        except Exception:
+            raise ErroEstruturaSheets('A Sheets API retornou uma resposta JSON inválida.') from None
+        return _converter(dados)
+    except ErroLeituraSheets:
+        raise
+    except Exception:
+        raise ErroLeituraSheets(
+            'Falha de conexão ou autenticação durante a consulta; '
+            'não é possível concluir se há materiais.') from None
+    finally:
+        sessao.close()
